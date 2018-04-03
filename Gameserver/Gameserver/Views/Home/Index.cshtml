@@ -1,0 +1,187 @@
+﻿@{
+    ViewBag.Title = "Home Page";
+}
+<link href="~/Content/font-awesome.min.css" rel="stylesheet" />
+<style type="text/css">
+    .mainTable {
+        margin: 10px 0;
+    }
+    td.field {
+        height: 50px;
+        width: 50px;
+        cursor: pointer;
+        text-align: center;           
+    }
+    td.field:hover, .statsRow:hover {
+        background-color: lightgray;
+    }
+    td.field.winRow {
+        background-color: lightpink !important;
+    }
+    a.showStats, .statsRow {
+        cursor: pointer;
+    }
+</style>
+
+<div class="jumbotron">
+    <h1>Game server running</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <h2>Getting started</h2>           
+    </div>
+</div>
+<div class="row" ng-app="games" ng-controller="gamesController">
+    <div class="col-md-4">
+        <a class="btn btn-primary startButton" ng-show="showStartButton" ng-click="startGame()">Start game</a>
+
+        <table class="table-bordered mainTable" ng-show="isGameRun">
+            @for (var j = 0; j <= 2; j++)
+            {
+                <tr>
+                    @for (var i = 0; i <= 2; i++)
+                    {
+                        <td class="field" data-pos="@(i+(j*3))" data-isfree="1" ng-click="movePlayer($event, @(i+(j*3)))"></td>
+                    }
+                </tr>
+            }
+        </table>
+
+        <p class="gameResult" ng-show="isGameEnd">
+            {{gameResult}}
+        </p>
+    </div>
+    <div class="col-md-4">
+        <div class="statCont">
+            <div class="row">
+                <div class="col-md-4">
+                    <a class="btn btn-primary" ng-click="showStats()">Show statistics (last 10 games)</a>
+                    <table class="table">
+                        <thead ng-show="isShowStats">
+                            <tr>
+                                <td>Date</td>
+                                <td>Opponent</td>
+                                <td>Winner</td>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="x in games" class="statsRow" ng-click="showGame()" data-id="{{x.id}}">
+                                <td><nobr>{{x.created}}</nobr></td>
+                                <td><nobr>{{x.opponent}}</nobr></td>
+                                <td><nobr>{{x.winner}}</nobr></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-4">
+        <p class="gameResult"></p>
+    </div>
+</div>
+
+<script src="~/Scripts/angular.min.js"></script>
+<script>
+
+    var app = angular.module('games', []);
+    app.controller('gamesController', function ($scope, $http) {
+        $scope.showStartButton = true;
+
+        $scope.startGame = function () {
+            var config = {
+                params: {
+                    opponent: 'computer',
+                    mark: 'X'
+                }
+            };
+            $http.get("/Game/StartGame", config)
+            .then(function (response) {
+                $scope.gameID = response.data.gameID;
+                $scope.showStartButton = false;
+                $scope.isGameRun = true;
+                $scope.isGameEnd = false;
+                for (var i = 0; i <= 8; i++) {
+                    $('.field[data-pos="' + i + '"]').html('').removeClass('winRow').attr('data-isFree', '1');
+                }
+            });
+        }
+        $scope.movePlayer = function ($event, pos) {
+            var el = angular.element($event.currentTarget);
+            if (!$scope.gameID || el.attr('data-isFree') == '0') {
+                return;
+            }
+            var config = {
+                params: {
+                    gameID: $scope.gameID,
+                    position: parseInt(el.attr('data-pos')),
+                    player: 'player 1'
+                }
+            };
+            $http.get("/Game/MovePlayer", config)
+            .then(function (response) {
+                el.html('<i class="fa fa-close" style="font-size:36px"></i>');
+                el.attr('data-isFree', '0');
+                var turnResult = response.data.turnResult;
+                if (turnResult.gameResult != null && turnResult.gameResult.winner != '') {
+                    switch (turnResult.gameResult.winner) {
+                        case 'player 1':
+                            $scope.gameResult = 'Game end: Player 1 won.';
+                            break;
+                        case 'computer':
+                            $scope.gameResult = 'Game end: Computer won.';
+                            break;
+                        case 'draw':
+                            $scope.gameResult = 'Game end: Draw.';
+                            break;
+                    }
+                    $scope.isGameEnd = true;
+                    $scope.showStartButton = true;
+                }
+                if (turnResult.gameResult != null && turnResult.gameResult.winRow != null) {
+                    var winRow = turnResult.gameResult.winRow.split(',').map(function (item) {
+                        return parseInt(item, 10);
+                    });
+                    for (var i = 0; i < winRow.length ; i++) {
+                        $('.field[data-pos="' + winRow[i] + '"]').addClass('winRow');
+                    }
+                }
+                if (turnResult.opponentTurn != null) {
+                    var opponentTurn = turnResult.opponentTurn;
+                    var fieldOpponent = $('.field[data-pos="' + parseInt(opponentTurn.position) + '"]');
+                    fieldOpponent.attr('data-isFree', '0');
+                    fieldOpponent.html('<i class="fa fa-circle-o" style="font-size:36px"></i>');
+                }
+            });
+        }
+
+        $scope.showStats = function () {
+            if ($scope.isShowStats) {
+                $scope.games = null;
+                $scope.isShowStats = false;
+            } else {
+                $scope.isShowStats = true;
+                $http.get("/Game/GetGames")
+                .then(function (response) {
+                    $scope.games = response.data;
+                });
+            }        
+        }
+        $scope.showGame = function () {
+            var gameID = this.x.id;
+            var config = {
+                params: {
+                    gameID: gameID || 0,
+                }
+            };
+            $http.get("/Game/ShowGame", config)
+            .then(function (response) {
+                alert(response.data);
+            });
+        }
+    });  
+</script>
+
